@@ -1,5 +1,3 @@
-*.py linguist-detectable=true
-*.js linguist-detectable=true
-*.html linguist-detectable=true
-*.css linguist-detectable=true
-
+editor.js linguist-vendored
+editor.css linguist-vendored
+editor.html linguist-vendored
