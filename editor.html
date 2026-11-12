@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HeadVoice — редактор</title>
+  <link rel="stylesheet" href="editor.css">
+</head>
+<body>
+
+<header>
+  <div class="logo" id="logo">
+    <div class="logo-line1">HEAD<b>VOICE</b></div>
+    <div class="logo-line2">by CyHDoochok · <a href="https://t.me/cyhdoochok_twitch" target="_blank">@CyHDoochok_twitch</a></div>
+  </div>
+  <div class="spacer"></div>
+  <div id="global-tools" class="hidden">
+    <button id="btnUndo" disabled title="Назад (Ctrl+Z)">↶</button>
+    <button id="btnRedo" disabled title="Вперёд (Ctrl+Y)">↷</button>
+    <span class="tools-group">
+      <button id="btnBrush" class="tool-btn active" data-tool="brush" title="Кисть (B)">🖌</button>
+      <button id="btnEraser" class="tool-btn" data-tool="erase" title="Ластик (X)">🧽</button>
+      <button id="btnRestore" class="tool-btn" data-tool="restore" title="Возврат (R)">↺</button>
+    </span>
+    <button id="btnMode" title="Переключить 2D/3D">2D</button>
+    <div class="layer-buttons">
+      <button id="btnLayerBase">БАЗА</button>
+      <button id="btnLayerHat">ШАПКА</button>
+    </div>
+    <label class="sync-label">
+      <input type="checkbox" id="syncDrawCheckbox" checked> Синхронно
+    </label>
+  </div>
+  <button id="btnHelp" class="icon-btn" title="Обучение">?</button>
+</header>
+
+<main>
+  <section class="page visible" id="page-upload">
+    <label id="dropzone">
+      <input type="file" id="fileInput" accept="image/*,.json,.txt" multiple hidden>
+      <div class="dz-icon">＋</div>
+      <div class="dz-title">Загрузи скин</div>
+      <div class="dz-sub">PNG 64×64</div>
+    </label>
+    <div class="load-actions">
+      <button id="btnPickDir">📁 Продолжить из папки</button>
+    </div>
+    <div id="settings-block" class="create-panel">
+      <h3>Параметры</h3>
+      <div class="row">
+        <label for="mouthCount">Этапов мимики</label>
+        <input type="number" id="mouthCount" min="1" max="32" value="6">
+      </div>
+      <div class="row">
+        <label class="cb-label"><input type="checkbox" id="hasBlinking" checked> Моргание</label>
+        <label class="cb-label"><input type="checkbox" id="hasRage" checked> Rage</label>
+      </div>
+      <button id="btnCreate" class="primary" disabled style="margin-top:8px">СОЗДАТЬ →</button>
+    </div>
+  </section>
+
+  <section class="page" id="page-mouth">
+    <div id="editWrap">
+      <div id="animTabs" class="anim-tabs"></div>
+      <div class="carousel-area">
+        <button class="carousel-arrow" id="stagePrev">◀</button>
+        <div class="carousel-viewport" id="carouselViewport">
+          <div class="carousel-track" id="carouselTrack"></div>
+        </div>
+        <button class="carousel-arrow" id="stageNext">▶</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="page-eyeselect">
+    <div class="eye-hint">
+      По умолчанию выделена <b>вся лицевая часть</b>.<br>
+      <span>Закрась красным только область глаз, чтобы при моргании менялись только они.</span>
+    </div>
+    <div class="eye-actions">
+      <button id="maskBrush" class="primary">🖌 Маска</button>
+      <button id="maskErase">🧽 Стереть</button>
+      <button id="maskClear">✖ Очистить</button>
+    </div>
+    <canvas id="eyeSelectCanvas" width="256" height="256" class="eye-canvas"></canvas>
+  </section>
+
+  <section class="page" id="page-blink">
+    <div id="editWrapB">
+      <div class="blink-header">
+        <div id="animTabsB" class="anim-tabs"></div>
+        <button id="btnGoEyeMask" class="small-btn">✏️ Изменить маску глаз</button>
+        <label class="cb-label">
+          <input type="checkbox" id="blinkOnlyEyesCheckbox"> Только глаза
+        </label>
+      </div>
+      <div class="carousel-area">
+        <button class="carousel-arrow" id="stagePrevB">◀</button>
+        <div class="carousel-viewport" id="carouselViewportB">
+          <div class="carousel-track" id="carouselTrackB"></div>
+        </div>
+        <button class="carousel-arrow" id="stageNextB">▶</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="page-rage">
+    <div id="editWrapR">
+      <div id="animTabsR" class="anim-tabs"></div>
+      <div class="carousel-area">
+        <button class="carousel-arrow" id="stagePrevR" disabled>◀</button>
+        <div class="carousel-viewport" id="carouselViewportR">
+          <div class="carousel-track" id="carouselTrackR"></div>
+        </div>
+        <button class="carousel-arrow" id="stageNextR" disabled>▶</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="page-test">
+    <div class="test-layout">
+      <div class="test-canvas-wrap">
+        <canvas id="testCanvas" class="test-canvas" width="288" height="288"></canvas>
+      </div>
+      <div class="settings-panel">
+        <h4>Настройки</h4>
+        <div class="field">
+          <label>Чувствительность: <span class="v" id="vSens">1.0</span></label>
+          <input type="range" id="testSens" min="10" max="2000" value="100">
+        </div>
+        <div class="field">
+          <label>Сила тряски: <span class="v" id="vShake">8</span></label>
+          <input type="range" id="testShake" min="0" max="24" value="8">
+        </div>
+        <div class="field">
+          <label>Частота моргания (сек): <span class="v" id="vBlinkFreq">5.0</span></label>
+          <input type="range" id="testBlinkFreq" min="10" max="100" value="50">
+        </div>
+        <div class="field">
+          <label>Общая длительность (мс): <span class="v" id="vBlinkDur">300</span></label>
+          <input type="range" id="testBlinkDur" min="100" max="2000" value="300">
+        </div>
+        <div class="field">
+          <label>Rage-бинда</label>
+          <input type="text" id="testRageKey" maxlength="1" value="j" class="key-input">
+        </div>
+        <details open>
+          <summary>Пороги чувствительности</summary>
+          <div class="thresh-row" id="threshRow"></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" id="page-download">
+    <div class="download-block">
+      <h2>Готово!</h2>
+      <div class="download-hint">
+        Выбери папку, где лежит <b>main.py</b> (или <b>HeadVoice.exe</b>) — файлы сохранятся туда.<br>
+        После сохранения нажми ПКМ по голове в программе → «Перечитать config.json».
+      </div>
+      <button id="btnExport" class="primary big">💾 СОХРАНИТЬ</button>
+      <div id="exportStatus"></div>
+    </div>
+  </section>
+</main>
+
+<footer id="footer" class="hidden">
+  <div class="foot-group" id="thicknessGroup">
+    <span>Толщина</span>
+    <div class="thickness-icons" id="thicknessIcons">
+      <button data-res="8">8</button>
+      <button data-res="16" class="active">16</button>
+      <button data-res="32">32</button>
+      <button data-res="64">64</button>
+      <button data-res="128">128</button>
+      <button data-res="256">256</button>
+    </div>
+  </div>
+  <button id="btnBack">← Назад</button>
+  <button id="btnNext" class="primary">ДАЛЕЕ →</button>
+  <button id="btnConfirm" class="primary hidden">ПОДТВЕРДИТЬ ✓</button>
+</footer>
+
+<div id="picker" class="hidden">
+  <div class="ptitle">ЦВЕТ (TAB)</div>
+  <div class="wheel-wrap">
+    <canvas id="wheel" width="188" height="188"></canvas>
+    <div id="wheelMarker"></div>
+  </div>
+  <input type="range" id="valSlider" min="0" max="100" value="100">
+  <div class="cur-row"><div id="curColor"></div><span id="curHex">#FF0000</span></div>
+</div>
+
+<div id="preview-panel" class="hidden">
+  <div class="ptitle" id="prevTitle">ПРЕДПРОСМОТР</div>
+  <canvas id="previewCanvas" width="160" height="160"></canvas>
+  <div class="preview-slider hidden" id="blinkFreqWrap">
+    <label>Частота моргания (сек)</label>
+    <input type="range" id="blinkFreqSlider" min="10" max="100" value="50">
+  </div>
+</div>
+
+<div id="tourWrap" class="hidden">
+  <div id="tourHl"></div>
+  <div id="tourBox">
+    <div id="tourTop">
+      <span id="tourStep"></span>
+      <button id="tourClose" title="Закрыть (Esc)">×</button>
+    </div>
+    <div id="tourTitle"></div>
+    <div id="tourText"></div>
+    <div id="tourDots"></div>
+    <div id="tourNav">
+      <button id="tourPrev">← Назад</button>
+      <button id="tourNext" class="primary">Далее →</button>
+    </div>
+  </div>
+</div>
+
+<script src="editor.js"></script>
+</body>
+</html>
