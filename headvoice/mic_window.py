@@ -1,143 +1,121 @@
-import sys
 import os
 import random
 import logging
 import gc
 import ctypes
-import ctypes.wintypes
-import numpy as np
-import sounddevice as sd
-import keyboard
 from PyQt5.QtWidgets import (
-    QWidget, QMenu, QAction, QDialog, QMessageBox, QApplication
+    QWidget, QMenu, QAction, QApplication
 )
 from PyQt5.QtCore import QTimer, Qt, QPoint
 from PyQt5.QtGui import QPixmap, QPainter, QColor
 
-from .config import load_config, save_config, DEFAULT_CONFIG, BASE_DIR
+from .config import (
+    load_config, save_config, DEFAULT_CONFIG, BASE_DIR,
+    get_current_model, get_current_model_dir, set_current_model, list_models
+)
 from .ui import SettingsDialog, open_editor
+from .memory_utils import get_memory_usage_mb
+from .audio_manager import AudioManager
+from .hotkey_manager import HotkeyManager
 
-# Структура для получения данных о памяти в Windows
-class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
-    _fields_ = [
-        ('cb', ctypes.wintypes.DWORD),
-        ('PageFaultCount', ctypes.wintypes.DWORD),
-        ('PeakWorkingSetSize', ctypes.c_size_t),
-        ('WorkingSetSize', ctypes.c_size_t),
-        ('QuotaPeakPagedPoolUsage', ctypes.c_size_t),
-        ('QuotaPagedPoolUsage', ctypes.c_size_t),
-        ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
-        ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
-        ('PagefileUsage', ctypes.c_size_t),
-        ('PeakPagefileUsage', ctypes.c_size_t),
-    ]
-
-def get_memory_usage_mb():
-    try:
-        counters = PROCESS_MEMORY_COUNTERS()
-        counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
-        process = ctypes.windll.kernel32.GetCurrentProcess()
-        ctypes.windll.psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb)
-        return counters.WorkingSetSize / (1024 * 1024)
-    except Exception:
-        return 0.0
 
 class MicWindow(QWidget):
+    # Главное окно со скином. 256x256, без рамки, прозрачный фон.
     def __init__(self):
         super().__init__()
         self.setFixedSize(256, 256)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        # Стартовая позиция — правый верхний угол с отступом
         geo = QApplication.primaryScreen().geometry()
         self.move(geo.width() - 300, 80)
         self._drag_pos = QPoint()
 
         self.config = load_config()
-        self._runtime_backup = dict(self.config)
         self.is_rage = False
         self.is_blinking = False
         self.blink_frame_idx = 0
         self.offset_x = 0
         self.offset_y = 0
-        self.volume = 0.0
         self.smooth_volume = 0.0
         self.level = 1
-        self._audio_error_count = 0
 
         self.load_images()
 
-        self.samplerate = 44100
-        self.blocksize = 1024
-        try:
-            self.stream = sd.InputStream(
-                samplerate=self.samplerate,
-                channels=1,
-                blocksize=self.blocksize,
-                callback=self._audio_cb,
-            )
-            self.stream.start()
-        except Exception as e:
-            logging.error(f"Mic error: {e}")
-            self.stream = None
+        # Аудио + хоткеи
+        self.audio = AudioManager()
+        self.audio.start()
 
-        # Таймер обновления громкости
+        self.hotkeys = HotkeyManager(self)
+        self.setup_hotkey()
+
+        # Основной цикл обновления кадров (25 fps)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_frame)
         self.timer.start(40)
 
-        # Таймер частоты моргания
+        # Отдельный таймер проверки аудио. В 40-мс цикле пытаться рестартовать
+        # поток — плохая идея, будет спамить. Раз в 2 секунды — норм.
+        self.audio_check_timer = QTimer(self)
+        self.audio_check_timer.timeout.connect(self._check_audio)
+        self.audio_check_timer.start(2000)
+
+        # Моргание
         self.blink_timer = QTimer(self)
         self.blink_timer.timeout.connect(self._start_blink)
         self._reset_blink_timer()
 
-        # Таймер анимации моргания
         self.anim_timer = QTimer(self)
         self.anim_timer.timeout.connect(self._next_blink_frame)
 
-        # Таймер проверки памяти (раз в 10 секунд)
+        # Периодическая чистка памяти
         self.mem_timer = QTimer(self)
         self.mem_timer.timeout.connect(self._check_memory)
         self.mem_timer.start(10000)
-
-        self.setup_hotkey()
 
     def _get_param(self, key, default=None):
         return self.config.get(key, DEFAULT_CONFIG.get(key, default))
 
     def _check_memory(self):
+        # Если RSS > 80% от лимита — форсим gc и EmptyWorkingSet.
+        # EmptyWorkingSet говорит винде "выкинь страницы из RAM, мы их не используем".
         limit = self._get_param("memory_limit_mb", 300)
         usage = get_memory_usage_mb()
-
         if usage > (limit * 0.8):
-            logging.info(f"Memory usage ({usage:.1f} MB) exceeded 80% of limit ({limit} MB). Cleaning up...")
+            logging.info(f"Memory usage ({usage:.1f} MB) exceeded 80% of limit "
+                         f"({limit} MB). Cleaning up...")
             gc.collect()
             try:
-                # Очистка рабочего набора (Working Set) процесса в Windows
-                ctypes.windll.psapi.EmptyWorkingSet(ctypes.windll.kernel32.GetCurrentProcess())
-                new_usage = get_memory_usage_mb()
-                logging.info(f"Cleanup complete. New usage: {new_usage:.1f} MB")
-            except Exception as e:
-                logging.error(f"Failed to trim working set: {e}")
+                ctypes.windll.psapi.EmptyWorkingSet(
+                    ctypes.windll.kernel32.GetCurrentProcess())
+            except Exception:
+                pass
+
+    def _check_audio(self):
+        # Если поток умер или не открылся — пробуем заново.
+        # Молча — юзер ничего не заметит.
+        if not self.audio.is_active():
+            logging.info("Audio stream inactive, attempting restart")
+            self.audio.start()
 
     def load_images(self):
+        # Загружаем все PNG для текущего скина. Сразу ресайзим под 256x256.
         self.mouth_images = []
         self.blink_images = []
         self.rage_image = None
 
+        model_dir = get_current_model_dir()
+
         n = self._get_param("mouth_count", 6)
         for i in range(1, n + 1):
-            p = os.path.join(BASE_DIR, f"image_mouth_{i}.png")
+            p = os.path.join(model_dir, f"image_mouth_{i}.png")
             if os.path.exists(p):
-                pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+                pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio,
+                                       Qt.FastTransformation)
                 self.mouth_images.append(pm)
 
-        if not self.mouth_images:
-            for i in range(1, 7):
-                p = os.path.join(BASE_DIR, f"image{i}.png")
-                if os.path.exists(p):
-                    pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio, Qt.FastTransformation)
-                    self.mouth_images.append(pm)
-
+        # Если ни одного кадра рта не нашли — рисуем белый квадрат-заглушку,
+        # чтобы юзер хоть что-то увидел и понял, что скин битый.
         if not self.mouth_images:
             pm = QPixmap(256, 256)
             pm.fill(QColor(255, 255, 255, 200))
@@ -145,31 +123,30 @@ class MicWindow(QWidget):
 
         m = self._get_param("blink_count", 3)
         for i in range(1, m + 1):
-            p = os.path.join(BASE_DIR, f"image_blink_{i}.png")
+            p = os.path.join(model_dir, f"image_blink_{i}.png")
             if os.path.exists(p):
-                pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+                pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio,
+                                       Qt.FastTransformation)
                 self.blink_images.append(pm)
 
-        p = os.path.join(BASE_DIR, "image_rage.png")
+        p = os.path.join(model_dir, "image_rage.png")
         if os.path.exists(p):
-            pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio, Qt.FastTransformation)
+            pm = QPixmap(p).scaled(256, 256, Qt.IgnoreAspectRatio,
+                                   Qt.FastTransformation)
             self.rage_image = pm
 
     def setup_hotkey(self):
-        try:
-            keyboard.unhook_all()
-            key = self._get_param("rage_key", "j").lower()
-            keyboard.on_press_key(key, self._on_rage_press, suppress=False)
-            keyboard.on_release_key(key, self._on_rage_release, suppress=False)
-        except Exception as e:
-            logging.error(f"Hotkey error: {e}")
+        key = self._get_param("rage_key", "j").lower()
+        # Колбэки теперь без аргументов — HotkeyManager сам эмитит сигнал
+        self.hotkeys.bind(key, self._on_rage_press, self._on_rage_release)
 
-    def _on_rage_press(self, _):
+    def _on_rage_press(self):
+        # Летит уже в главном потоке благодаря QueuedConnection
         self.is_rage = True
         self.is_blinking = False
         self.anim_timer.stop()
 
-    def _on_rage_release(self, _):
+    def _on_rage_release(self):
         self.is_rage = False
 
     def _reset_blink_timer(self):
@@ -179,13 +156,16 @@ class MicWindow(QWidget):
         self.blink_timer.start(max(1000, interval_ms))
 
     def _start_blink(self):
+        # Если в рейдж-режиме или кадров моргания меньше двух — смысла моргать нет
         if self.is_rage or len(self.blink_images) <= 1:
             return
         self.is_blinking = True
         self.blink_frame_idx = 1
-
         total_dur = self._get_param("blink_duration", 300)
-        frame_dur = max(20, total_dur // len(self.blink_images))
+        # blink_images[0] — открытые глаза (база). Остальные [1..N-1] — кадры моргания.
+        # Делим длительность на (N-1), чтобы последний кадр отыграл полный отрезок.
+        frames = max(1, len(self.blink_images) - 1)
+        frame_dur = max(20, total_dur // frames)
         self.anim_timer.start(frame_dur)
 
     def _next_blink_frame(self):
@@ -194,12 +174,14 @@ class MicWindow(QWidget):
             return
         self.blink_frame_idx += 1
         if self.blink_frame_idx >= len(self.blink_images):
+            # Дошли до конца — закрываем моргание
             self.is_blinking = False
             self.anim_timer.stop()
             return
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            # Запоминаем точку клика для перетаскивания
             self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
         elif event.button() == Qt.RightButton:
@@ -213,23 +195,16 @@ class MicWindow(QWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
             self.close()
-
-    def _audio_cb(self, indata, frames, time, status):
-        try:
-            if status:
-                self._audio_error_count += 1
-                if self._audio_error_count % 100 == 0:
-                    logging.warning(f"Audio status: {status}")
-            rms = float(np.sqrt(np.mean(indata ** 2)))
-            self.volume = rms
-        except Exception as e:
-            logging.error(f"Audio callback fatal: {e}")
+        else:
+            event.accept()
 
     def _update_frame(self):
-        self.smooth_volume = 0.7 * self.smooth_volume + 0.3 * self.volume
+        # Сглаживаем громкость, чтобы рот не дёргался на каждом блоке
+        self.smooth_volume = 0.7 * self.smooth_volume + 0.3 * self.audio.volume
         sens = self._get_param("sensitivity", 1.5)
         v = self.smooth_volume * sens
 
+        # Определяем уровень громкости по порогам
         thresholds = self._get_param("thresholds", DEFAULT_CONFIG["thresholds"])
         mouth_count = len(self.mouth_images)
         level = 1
@@ -238,6 +213,7 @@ class MicWindow(QWidget):
                 level = i + 2
         self.level = min(level, mouth_count)
 
+        # Тряска в рейдж-режиме
         if self.is_rage:
             force = min(self._get_param("shake_force", 8), 32)
             self.offset_x = random.randint(-force, force)
@@ -249,27 +225,35 @@ class MicWindow(QWidget):
         self.update()
 
     def paintEvent(self, event):
+        # Рисуем слоями: сначала рот, потом глаза, потом рейдж.
+        # Рот меняется по громкости, глаза — по таймеру моргания.
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, False)
         painter.setClipRect(0, 0, 256, 256)
 
+        # 1. Рот. Всегда рисуем базовый кадр, потом поверх — текущий уровень.
         if self.mouth_images:
             painter.drawPixmap(self.offset_x, self.offset_y, self.mouth_images[0])
         idx = max(0, min(self.level - 1, len(self.mouth_images) - 1))
         if idx > 0 and len(self.mouth_images) > 1:
             painter.drawPixmap(self.offset_x, self.offset_y, self.mouth_images[idx])
 
+        # 2. Глаза (не рисуем в рейдж-режиме, там рейдж-картинка перекроет)
         if not self.is_rage and self.blink_images:
+            # Всегда базовый кадр (открытые глаза)
+            painter.drawPixmap(self.offset_x, self.offset_y, self.blink_images[0])
+            # Если моргаем — поверх рисуем кадр с веком
             if self.is_blinking:
                 blink_idx = min(self.blink_frame_idx, len(self.blink_images) - 1)
-                painter.drawPixmap(self.offset_x, self.offset_y, self.blink_images[blink_idx])
-            else:
-                painter.drawPixmap(self.offset_x, self.offset_y, self.blink_images[0])
+                painter.drawPixmap(self.offset_x, self.offset_y,
+                                   self.blink_images[blink_idx])
 
+        # 3. Рейдж — самый верхний слой
         if self.is_rage and self.rage_image:
             painter.drawPixmap(self.offset_x, self.offset_y, self.rage_image)
 
     def show_context_menu(self, pos):
+        # ПКМ по окну — контекстное меню
         menu = QMenu(self)
         menu.setStyleSheet("""
             QMenu{background:#141926;color:#e6eaf3;border:1px solid #2a3242;}
@@ -294,42 +278,60 @@ class MicWindow(QWidget):
         menu.exec_(pos)
 
     def update_live_settings(self, new_cfg):
+        # Вызывается из окна настроек на каждое изменение ползунка.
+        # Обновляем конфиг в памяти и перезапускаем таймер моргания (интервал мог поменяться).
         self.config = new_cfg
         self._reset_blink_timer()
         self.update()
 
+    def on_model_changed(self, name):
+        # Сменили скин — перезагружаем картинки и конфиг
+        self.config = load_config(name)
+        self.is_rage = False
+        self.is_blinking = False
+        self.anim_timer.stop()
+        self.load_images()
+        self._reset_blink_timer()
+        self.setup_hotkey()
+        self.update()
+
     def _open_settings_dialog(self):
-        if hasattr(self, '_settings_dialog') and self._settings_dialog.isVisible():
-            self._settings_dialog.raise_()
-            self._settings_dialog.activateWindow()
+        dlg = getattr(self, '_settings_dialog', None)
+        if dlg is not None and dlg.isVisible():
+            # Окно уже открыто — просто фокусим
+            dlg.raise_()
+            dlg.activateWindow()
             return
+        # Старый диалог висит в памяти — удаляем
+        if dlg is not None:
+            dlg.deleteLater()
+            self._settings_dialog = None
 
         def save_cb(cfg):
             self.config = cfg
             save_config(cfg)
-            self._runtime_backup = dict(cfg)
-            QMessageBox.information(self, "HeadVoice", "Настройки сохранены в файл!")
 
         self._settings_dialog = SettingsDialog(self.config, self, save_cb)
         self._settings_dialog.show()
 
     def _update_all(self):
+        # Пункт "Обновить" в контекстном меню. Перечитываем конфиг и скин с диска.
+        if get_current_model() is None and list_models():
+            set_current_model(list_models()[0])
         self.config = load_config()
-        self._runtime_backup = dict(self.config)
         self.load_images()
         self._reset_blink_timer()
         self.setup_hotkey()
-        QMessageBox.information(self, "HeadVoice", "Настройки и PNG-файлы успешно обновлены!")
 
     def _open_editor(self):
         open_editor(self)
 
     def closeEvent(self, event):
+        # Прибираемся: таймеры, хоткеи, аудио.
         try:
-            keyboard.unhook_all()
-            if self.stream:
-                self.stream.stop()
-                self.stream.close()
+            self.audio_check_timer.stop()
+            self.hotkeys.cleanup()
+            self.audio.stop()
         except Exception:
             pass
         super().closeEvent(event)

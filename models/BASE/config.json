@@ -1,0 +1,29 @@
+{
+  "sensitivity": 14.0,
+  "thresholds": [
+    6,
+    11,
+    16,
+    21,
+    26,
+    31,
+    36,
+    41,
+    46,
+    51,
+    56,
+    61,
+    66
+  ],
+  "blink_interval": 5.0,
+  "rage_key": "j",
+  "shake_force": 10,
+  "blink_duration": 806,
+  "mouth_count": 14,
+  "has_blinking": true,
+  "has_rage": true,
+  "blink_count": 23,
+  "blink_only_eyes": false,
+  "has_body": false,
+  "memory_limit_mb": 300
+}

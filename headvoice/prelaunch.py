@@ -9,6 +9,8 @@ from .ui import SettingsDialog, open_editor
 
 
 class PreLaunchWindow(QWidget):
+    # Окно, которое показывается до запуска основного скина.
+    # Типа лончера: "Редактор / Запустить / Настройки / Выход".
     def __init__(self):
         super().__init__()
         self.setFixedSize(420, 380)
@@ -23,6 +25,7 @@ class PreLaunchWindow(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
+        # Тёмная скруглённая панель
         container = QWidget()
         container.setObjectName("container")
         container.setStyleSheet("""
@@ -34,11 +37,13 @@ class PreLaunchWindow(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
 
+        # Заголовок
         title = QLabel("HeadVoice")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("color:#e6eaf3;font-size:26px;font-weight:800;letter-spacing:3px;")
         layout.addWidget(title)
 
+        # Подпись с кликабельной ссылкой на твич
         sub = QLabel('by CyHDoochok · <a href="https://t.me/cyhdoochok_twitch" '
                      'style="color:#2fd39a;text-decoration:none;">@CyHDoochok_twitch</a>')
         sub.setTextFormat(Qt.RichText)
@@ -49,6 +54,7 @@ class PreLaunchWindow(QWidget):
         layout.addWidget(sub)
         layout.addSpacing(10)
 
+        # Кнопки
         btn_editor = QPushButton("🎨 Открыть редактор")
         btn_editor.setMinimumHeight(38)
         btn_editor.setStyleSheet("""
@@ -82,6 +88,7 @@ class PreLaunchWindow(QWidget):
         layout.addWidget(btn_settings)
         layout.addStretch()
 
+        # Выход внизу, мелким текстом
         btn_exit = QPushButton("✕ Выход")
         btn_exit.setStyleSheet("""
             QPushButton{background:transparent;color:#7f8ba3;border:none;padding:6px;font-size:12px;}
@@ -91,11 +98,13 @@ class PreLaunchWindow(QWidget):
         layout.addWidget(btn_exit)
 
     def _center(self):
+        # Центрируем окно на главном экране
         screen = QApplication.primaryScreen().geometry()
         self.move((screen.width() - self.width()) // 2,
                   (screen.height() - self.height()) // 2)
 
     def mousePressEvent(self, event):
+        # Перетаскивание окна за любую точку (рамки-то нет)
         if event.button() == Qt.LeftButton:
             self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
@@ -105,16 +114,23 @@ class PreLaunchWindow(QWidget):
             self.move(event.globalPos() - self._drag_pos)
             event.accept()
 
+    def keyPressEvent(self, event):
+        # Съедаем все клавиши, чтобы окно случайно не закрылось по Esc
+        event.accept()
+
     def _open_editor(self):
         open_editor(self)
 
     def _open_settings(self):
         cfg = load_config()
-        # Передаем self как parent, чтобы не было вылета
-        dlg = SettingsDialog(cfg, self)
-        if dlg.exec_() == QDialog.Accepted:
-            save_config(dlg.get_config())
+
+        def save_cb(new_cfg):
+            save_config(new_cfg)
+
+        dlg = SettingsDialog(cfg, self, save_cb)
+        dlg.exec_()
 
     def _launch(self):
+        # Ставим флаг и закрываемся. main.py следит за этим флагом и запускает MicWindow.
         self.launch_requested = True
         self.close()

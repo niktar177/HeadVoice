@@ -8,216 +8,266 @@
 </head>
 <body>
 
-<header>
-  <div class="logo" id="logo">
-    <div class="logo-line1">HEAD<b>VOICE</b></div>
-    <div class="logo-line2">by CyHDoochok · <a href="https://t.me/cyhdoochok_twitch" target="_blank">@CyHDoochok_twitch</a></div>
-  </div>
-  <div class="spacer"></div>
-  <div id="global-tools" class="hidden">
-    <button id="btnUndo" disabled title="Назад (Ctrl+Z)">↶</button>
-    <button id="btnRedo" disabled title="Вперёд (Ctrl+Y)">↷</button>
-    <span class="tools-group">
-      <button id="btnBrush" class="tool-btn active" data-tool="brush" title="Кисть (B)">🖌</button>
-      <button id="btnEraser" class="tool-btn" data-tool="erase" title="Ластик (X)">🧽</button>
-      <button id="btnRestore" class="tool-btn" data-tool="restore" title="Возврат (R)">↺</button>
-    </span>
-    <button id="btnMode" title="Переключить 2D/3D">2D</button>
-    <div class="layer-buttons">
-      <button id="btnLayerBase">БАЗА</button>
-      <button id="btnLayerHat">ШАПКА</button>
+<!-- ЭКРАН 1: ВЫБОР ТИПА -->
+<div id="page-start" class="page visible">
+  <div class="start-container">
+    <h1>HeadVoice Editor</h1>
+    <p>Выберите тип создаваемой модели</p>
+    <div class="start-buttons">
+      <button class="start-btn" onclick="chooseType('mc')">
+        <span class="icon">🧊</span>
+        <span class="title">Minecraft</span>
+        <span class="desc">Стандартный скин 64x64</span>
+      </button>
+      <button class="start-btn" onclick="chooseType('png')">
+        <span class="icon">🖼️</span>
+        <span class="title">PNG</span>
+        <span class="desc">Своя картинка (В разработке)</span>
+      </button>
+      <button class="start-btn" onclick="chooseType('my')">
+        <span class="icon">📁</span>
+        <span class="title">Мои модельки</span>
+        <span class="desc">Загрузить готовый проект</span>
+      </button>
     </div>
-    <label class="sync-label">
-      <input type="checkbox" id="syncDrawCheckbox" checked> Синхронно
-    </label>
   </div>
-  <button id="btnHelp" class="icon-btn" title="Обучение">?</button>
-</header>
+</div>
 
-<main>
-  <section class="page visible" id="page-upload">
-    <label id="dropzone">
-      <input type="file" id="fileInput" accept="image/*,.json,.txt" multiple hidden>
-      <div class="dz-icon">＋</div>
-      <div class="dz-title">Загрузи скин</div>
-      <div class="dz-sub">PNG 64×64</div>
-    </label>
-    <div class="load-actions">
-      <button id="btnPickDir">📁 Продолжить из папки</button>
+<!-- ЭКРАН 2: ПАРАМЕТРЫ -->
+<div id="page-setup" class="page">
+  <div class="setup-container">
+    <h2>Настройка модели</h2>
+
+    <div id="uploadPreview" style="display:flex; gap:20px; justify-content:center; margin-bottom:20px;">
+      <div class="start-btn" id="btnLoadSkin" onclick="document.getElementById('fileInputSkin').click()">
+        <div class="icon">📄</div>
+        <div class="title">Загрузить PNG</div>
+        <div class="desc">Скин 64x64</div>
+      </div>
+      <div class="start-btn" id="model3dBox" style="pointer-events:none; opacity:0.5;">
+        <div class="icon">🧊</div>
+        <div class="title">Готовая 3D</div>
+        <div class="desc">(Загрузите скин)</div>
+      </div>
     </div>
-    <div id="settings-block" class="create-panel">
-      <h3>Параметры</h3>
-      <div class="row">
-        <label for="mouthCount">Этапов мимики</label>
+
+    <div class="setup-form">
+      <div class="field-row">
+        <label>Кол-во кадров рта</label>
         <input type="number" id="mouthCount" min="1" max="32" value="6">
       </div>
-      <div class="row">
-        <label class="cb-label"><input type="checkbox" id="hasBlinking" checked> Моргание</label>
-        <label class="cb-label"><input type="checkbox" id="hasRage" checked> Rage</label>
+      <div class="field-row">
+        <label>Кол-во кадров век</label>
+        <input type="number" id="blinkCount" min="1" max="32" value="6">
       </div>
-      <button id="btnCreate" class="primary" disabled style="margin-top:8px">СОЗДАТЬ →</button>
+      <div class="field-row">
+        <label>RAGE режим</label>
+        <label class="switch"><input type="checkbox" id="hasRage" checked><span class="slider"></span></label>
+      </div>
     </div>
-  </section>
+    <p class="hint">Можно изменить позже</p>
 
-  <section class="page" id="page-mouth">
-    <div id="editWrap">
-      <div id="animTabs" class="anim-tabs"></div>
-      <div class="carousel-area">
-        <button class="carousel-arrow" id="stagePrev">◀</button>
-        <div class="carousel-viewport" id="carouselViewport">
-          <div class="carousel-track" id="carouselTrack"></div>
+    <div class="setup-actions" style="display:none;">
+      <button onclick="showPage('page-start')" class="btn-secondary">← Назад</button>
+      <button onclick="startEditorCreation()" class="btn-primary">СОЗДАТЬ →</button>
+    </div>
+
+    <input type="file" id="fileInputSkin" accept="image/*" hidden>
+    <input type="file" id="fileInputProject" webkitdirectory directory hidden>
+  </div>
+</div>
+
+<!-- ЭКРАН 3: РЕДАКТОР -->
+<div id="page-editor" class="page">
+  <!-- ЛЕВАЯ ПАНЕЛЬ -->
+  <aside id="left-sidebar">
+    <div class="logo">
+      <div class="logo-title">HEAD<b>VOICE</b></div>
+      <div class="logo-sub">by CyHDoochok · <a href="https://t.me/cyhdoochok_twitch" target="_blank">@CyHDoochok_twitch</a></div>
+    </div>
+
+    <div class="tool-section">
+      <div class="tools-group">
+        <button id="btnBrush" class="tool-btn active" data-tool="brush" title="Кисть (B)"><span>🖌</span><small>Кисть [B]</small></button>
+        <button id="btnEraser" class="tool-btn" data-tool="erase" title="Ластик (X)"><span>🩹</span><small>Ластик [X]</small></button>
+        <button id="btnRestore" class="tool-btn" data-tool="restore" title="Возврат (R)"><span>↺</span><small>Возврат [R]</small></button>
+        <button id="btnPicker" class="tool-btn" data-tool="picker" title="Пипетка (F)"><span>🎯</span><small>Пипетка [F]</small></button>
+      </div>
+      <div class="thickness-icons" id="thicknessIcons">
+        <button data-res="8" title="Толщина 1">1</button>
+        <button data-res="16" class="active" title="Толщина 2">2</button>
+        <button data-res="32" title="Толщина 3">3</button>
+        <button data-res="64" title="Толщина 4">4</button>
+        <button data-res="128" title="Толщина 5">5</button>
+      </div>
+    </div>
+
+    <div class="layer-section">
+      <div class="label">СЛОИ:</div>
+      <div class="toggle-row">
+        <span>Нижний (Y)</span>
+        <button id="btnLayerBase" class="btn-toggle on">ВКЛ</button>
+      </div>
+      <div class="toggle-row">
+        <span>Верхний (T)</span>
+        <button id="btnLayerHat" class="btn-toggle on">ВКЛ</button>
+      </div>
+      <div class="toggle-row">
+        <span>Синхронно</span>
+        <button id="btnSyncDraw" class="btn-toggle">ВЫКЛ</button>
+      </div>
+      <div class="toggle-row" style="margin-top:10px;">
+        <span>Режим 2D/3D (6)</span>
+        <button id="btnMode" class="btn-toggle on">3D</button>
+      </div>
+    </div>
+
+    <div class="palette-section">
+      <div class="label" style="display:flex; justify-content:space-between; align-items:center;">
+        ПАЛИТРА
+        <button id="btnPaletteMode" class="btn-toggle" style="padding:2px 8px; font-size:10px;">RGB</button>
+      </div>
+
+      <div id="paletteRGB">
+        <div class="wheel-wrap">
+          <canvas id="wheel" width="160" height="160"></canvas>
+          <div id="wheelMarker"></div>
         </div>
-        <button class="carousel-arrow" id="stageNext">▶</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="page" id="page-eyeselect">
-    <div class="eye-hint">
-      По умолчанию выделена <b>вся лицевая часть</b>.<br>
-      <span>Закрась красным только область глаз, чтобы при моргании менялись только они.</span>
-    </div>
-    <div class="eye-actions">
-      <button id="maskBrush" class="primary">🖌 Маска</button>
-      <button id="maskErase">🧽 Стереть</button>
-      <button id="maskClear">✖ Очистить</button>
-    </div>
-    <canvas id="eyeSelectCanvas" width="256" height="256" class="eye-canvas"></canvas>
-  </section>
-
-  <section class="page" id="page-blink">
-    <div id="editWrapB">
-      <div class="blink-header">
-        <div id="animTabsB" class="anim-tabs"></div>
-        <button id="btnGoEyeMask" class="small-btn">✏️ Изменить маску глаз</button>
-        <label class="cb-label">
-          <input type="checkbox" id="blinkOnlyEyesCheckbox"> Только глаза
-        </label>
-      </div>
-      <div class="carousel-area">
-        <button class="carousel-arrow" id="stagePrevB">◀</button>
-        <div class="carousel-viewport" id="carouselViewportB">
-          <div class="carousel-track" id="carouselTrackB"></div>
+        <div class="color-inputs">
+          <div id="curColor"></div>
+          <input type="text" id="hexInput" value="#FF0000" maxlength="7">
         </div>
-        <button class="carousel-arrow" id="stageNextB">▶</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="page" id="page-rage">
-    <div id="editWrapR">
-      <div id="animTabsR" class="anim-tabs"></div>
-      <div class="carousel-area">
-        <button class="carousel-arrow" id="stagePrevR" disabled>◀</button>
-        <div class="carousel-viewport" id="carouselViewportR">
-          <div class="carousel-track" id="carouselTrackR"></div>
+        <input type="range" id="valSlider" min="0" max="100" value="100" style="margin-top:5px;">
+        <div class="sliders-row">
+          <label>R <input type="range" id="rgbR" min="0" max="255"></label>
+          <label>G <input type="range" id="rgbG" min="0" max="255"></label>
+          <label>B <input type="range" id="rgbB" min="0" max="255"></label>
         </div>
-        <button class="carousel-arrow" id="stageNextR" disabled>▶</button>
+      </div>
+
+      <div id="paletteHexMode" style="display:none;">
+        <input type="text" id="bigHex" value="#FF0000" style="padding:15px; font-size:18px; text-align:center; font-family:monospace; text-transform:uppercase;">
       </div>
     </div>
-  </section>
 
-  <section class="page" id="page-test">
-    <div class="test-layout">
-      <div class="test-canvas-wrap">
-        <canvas id="testCanvas" class="test-canvas" width="288" height="288"></canvas>
+    <div class="nav-section" style="margin-top:auto; padding-top:15px; border-top:1px solid var(--line);">
+      <div class="hotkey-hint">
+        WASD/QE - вращение (в 3D)<br>
+        Колесико - сменить кадр<br>
+        Ctrl+Scroll - масштаб<br>
+        Ctrl+Z - отменить
       </div>
-      <div class="settings-panel">
-        <h4>Настройки</h4>
+      <div class="nav-buttons">
+        <button id="btnUndo" class="btn-secondary" title="Отменить (Ctrl+Z)">↶ Отмена</button>
+        <button id="btnRedo" class="btn-secondary" title="Вернуть (Ctrl+Y)">↷ Возврат</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ЦЕНТР (РАБОЧАЯ ОБЛАСТЬ) -->
+  <main id="main-workspace">
+    <div id="canvasLabel">БАЗОВАЯ</div>
+    <div class="canvas-wrapper" id="canvasWrapper">
+      <canvas id="mainCanvas" width="256" height="256"></canvas>
+    </div>
+  </main>
+
+  <!-- ПРАВАЯ ПАНЕЛЬ -->
+  <aside id="right-sidebar">
+    <div class="tabs-header">
+      <button class="tab-btn active" data-tab="mouth">РОТ</button>
+      <button class="tab-btn" data-tab="eyes">ГЛАЗА</button>
+      <button class="tab-btn" data-tab="rage" id="tabRageBtn">RAGE</button>
+      <button class="tab-btn" data-tab="settings">НАСТРОЙКИ</button>
+    </div>
+
+    <div class="tab-content" id="tab-mouth">
+      <div class="layer-list" id="layerListMouth"></div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-eyes">
+      <div class="toggle-row" style="margin-bottom:15px;">
+        <span>Только глаза</span>
+        <button id="btnOnlyEyes" class="btn-toggle">ВЫКЛ</button>
+      </div>
+      <div class="toggle-row">
+        <span>Режим маски (рисовать)</span>
+        <button id="btnEyeModeToggle" class="btn-toggle" style="background:var(--bg);color:var(--txt);">ВЫКЛ</button>
+      </div>
+      <div class="layer-list" id="layerListEyes"></div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-rage">
+      <div class="layer-list" id="layerListRage"></div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-settings">
+      <div class="settings-form">
         <div class="field">
-          <label>Чувствительность: <span class="v" id="vSens">1.0</span></label>
-          <input type="range" id="testSens" min="10" max="2000" value="100">
+          <label>Имя модели</label>
+          <input type="text" id="modelNameInput" value="my_model">
+        </div>
+        <div class="field-row" style="margin-bottom:10px;">
+          <label>RAGE режим</label>
+          <label class="switch"><input type="checkbox" id="settingsHasRage" checked><span class="slider"></span></label>
+        </div>
+        <div class="field-row" style="margin-bottom:10px;">
+          <label>Добавить тело</label>
+          <label class="switch"><input type="checkbox" id="settingsHasBody"><span class="slider"></span></label>
         </div>
         <div class="field">
-          <label>Сила тряски: <span class="v" id="vShake">8</span></label>
-          <input type="range" id="testShake" min="0" max="24" value="8">
+          <label>Чувствительность: <span id="vSens">1.5</span></label>
+          <input type="range" id="testSens" min="10" max="2000" value="150">
         </div>
         <div class="field">
-          <label>Частота моргания (сек): <span class="v" id="vBlinkFreq">5.0</span></label>
+          <label>Частота моргания (сек): <span id="vBlinkFreq">5.0</span></label>
           <input type="range" id="testBlinkFreq" min="10" max="100" value="50">
         </div>
         <div class="field">
-          <label>Общая длительность (мс): <span class="v" id="vBlinkDur">300</span></label>
+          <label>Длительность моргания (мс): <span id="vBlinkDur">300</span></label>
           <input type="range" id="testBlinkDur" min="100" max="2000" value="300">
         </div>
         <div class="field">
-          <label>Rage-бинда</label>
+          <label>Сила тряски: <span id="vShake">8</span></label>
+          <input type="range" id="testShake" min="0" max="30" value="8">
+        </div>
+        <div class="field">
+          <label>Rage-клавиша</label>
           <input type="text" id="testRageKey" maxlength="1" value="j" class="key-input">
         </div>
-        <details open>
-          <summary>Пороги чувствительности</summary>
+
+        <details open style="margin-top:10px;">
+          <summary style="font-size:12px; color:var(--acc); font-weight:bold; cursor:pointer; margin-bottom:10px;">Пороги громкости</summary>
           <div class="thresh-row" id="threshRow"></div>
         </details>
       </div>
     </div>
-  </section>
 
-  <section class="page" id="page-download">
-    <div class="download-block">
-      <h2>Готово!</h2>
-      <div class="download-hint">
-        Выбери папку, где лежит <b>main.py</b> (или <b>HeadVoice.exe</b>) — файлы сохранятся туда.<br>
-        После сохранения нажми ПКМ по голове в программе → «Перечитать config.json».
-      </div>
-      <button id="btnExport" class="primary big">💾 СОХРАНИТЬ</button>
-      <div id="exportStatus"></div>
+    <div class="right-footer">
+      <button id="btnFinish" class="btn-primary big" style="width:100%;">СОХРАНИТЬ ПРОЕКТ</button>
     </div>
-  </section>
-</main>
-
-<footer id="footer" class="hidden">
-  <div class="foot-group" id="thicknessGroup">
-    <span>Толщина</span>
-    <div class="thickness-icons" id="thicknessIcons">
-      <button data-res="8">8</button>
-      <button data-res="16" class="active">16</button>
-      <button data-res="32">32</button>
-      <button data-res="64">64</button>
-      <button data-res="128">128</button>
-      <button data-res="256">256</button>
-    </div>
-  </div>
-  <button id="btnBack">← Назад</button>
-  <button id="btnNext" class="primary">ДАЛЕЕ →</button>
-  <button id="btnConfirm" class="primary hidden">ПОДТВЕРДИТЬ ✓</button>
-</footer>
-
-<div id="picker" class="hidden">
-  <div class="ptitle">ЦВЕТ (TAB)</div>
-  <div class="wheel-wrap">
-    <canvas id="wheel" width="188" height="188"></canvas>
-    <div id="wheelMarker"></div>
-  </div>
-  <input type="range" id="valSlider" min="0" max="100" value="100">
-  <div class="cur-row"><div id="curColor"></div><span id="curHex">#FF0000</span></div>
+  </aside>
 </div>
 
-<div id="preview-panel" class="hidden">
-  <div class="ptitle" id="prevTitle">ПРЕДПРОСМОТР</div>
-  <canvas id="previewCanvas" width="160" height="160"></canvas>
-  <div class="preview-slider hidden" id="blinkFreqWrap">
-    <label>Частота моргания (сек)</label>
-    <input type="range" id="blinkFreqSlider" min="10" max="100" value="50">
+<!-- Заглушка для PNG -->
+<div id="page-png" class="page">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;">
+    <h1 style="color:var(--acc);">Режим PNG</h1>
+    <p style="color:var(--dim);">В разработке...</p>
+    <button onclick="showPage('page-start')" class="btn-secondary" style="margin-top:20px;">← Назад</button>
   </div>
 </div>
 
-<div id="tourWrap" class="hidden">
-  <div id="tourHl"></div>
-  <div id="tourBox">
-    <div id="tourTop">
-      <span id="tourStep"></span>
-      <button id="tourClose" title="Закрыть (Esc)">×</button>
-    </div>
-    <div id="tourTitle"></div>
-    <div id="tourText"></div>
-    <div id="tourDots"></div>
-    <div id="tourNav">
-      <button id="tourPrev">← Назад</button>
-      <button id="tourNext" class="primary">Далее →</button>
-    </div>
-  </div>
-</div>
-
-<script src="editor.js"></script>
+<!-- Модули -->
+<script src="editor_js/state.js"></script>
+<script src="editor_js/math_utils.js"></script>
+<script src="editor_js/render_utils.js"></script>
+<script src="editor_js/audio_utils.js"></script>
+<script src="editor_js/ui_core.js"></script>
+<script src="editor_js/canvas_editor.js"></script>
+<script src="editor_js/color_picker.js"></script>
+<script src="editor_js/file_loader.js"></script>
+<script src="editor_js/exporter.js"></script>
+<script src="editor_js/main.js"></script>
 </body>
 </html>
