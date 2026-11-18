@@ -1,5 +1,40 @@
 'use strict';
 
+// === Модель-специфичный UI ===
+function applyModelTypeUI() {
+    const isPng = state.modelType === 'png';
+
+    const baseRow = document.getElementById('btnLayerBase')?.closest('.toggle-row');
+    const hatRow  = document.getElementById('btnLayerHat')?.closest('.toggle-row');
+    const modeRow = document.getElementById('btnMode')?.closest('.toggle-row');
+    if (baseRow) baseRow.style.display = isPng ? 'none' : '';
+    if (hatRow)  hatRow.style.display  = isPng ? 'none' : '';
+    if (modeRow) modeRow.style.display = isPng ? 'none' : '';
+
+    const bodyRow = document.getElementById('settingsHasBody')?.closest('.field-row');
+    if (bodyRow) bodyRow.style.display = isPng ? 'none' : '';
+
+    const scaleSection = document.getElementById('pngScaleSection');
+    if (scaleSection) scaleSection.style.display = isPng ? '' : 'none';
+
+    updatePngScaleUI();
+}
+
+function updatePngScaleUI() {
+    const slider = document.getElementById('pngScaleSlider');
+    const label  = document.getElementById('pngScaleValue');
+    if (!slider) return;
+    slider.value = Math.round(state.pngScale * 100);
+    if (label) label.textContent = Math.round(state.pngScale * 100) + '%';
+}
+
+function setPngScale(v) {
+    state.pngScale = Math.max(PNG_MIN_SCALE, Math.min(PNG_MAX_SCALE, v));
+    updatePngScaleUI();
+    if (state.activeTab === 'settings') renderProgramPreview();
+    else requestRender();
+}
+
 function showPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('visible'));
     const target = document.getElementById(pageId);
@@ -22,7 +57,6 @@ function switchTab(tabName) {
         setMode('view');
         buildThresholdsUI();
     } else {
-        // В RAGE принудительно ставим 2D (edit)
         setMode('edit');
     }
 
@@ -33,6 +67,7 @@ function switchTab(tabName) {
 
     updateCanvasLabel();
     buildRightPanel();
+    applyModelTypeUI();
     renderAll();
 }
 
@@ -54,10 +89,11 @@ function setMode(mode) {
 
 function updateEyeModeBtn() {
     const btn = document.getElementById('btnEyeModeToggle');
+    if (!btn) return;
     if (state.eyeMaskMode) {
         btn.textContent = 'ВКЛ (Маска)';
         btn.classList.add('on');
-        setTool('erase'); // По умолчанию включаем ластик для маски
+        setTool('erase');
     } else {
         btn.textContent = 'ВЫКЛ';
         btn.classList.remove('on');
@@ -67,6 +103,7 @@ function updateEyeModeBtn() {
 
 function updateOnlyEyesBtn() {
     const btn = document.getElementById('btnOnlyEyes');
+    if (!btn) return;
     if (state.blinkOnlyEyes) {
         btn.textContent = 'ВКЛ';
         btn.classList.add('on');
@@ -93,7 +130,39 @@ function currentStages() {
     return [];
 }
 
+// === Правая панель ===
+// Кэш «сигнатуры»: если изменился только activeStageIdx, не пересобираем DOM и миниатюры.
+let _panelSig = '';
+let _panelActiveIdx = -1;
+
 function buildRightPanel() {
+    const stages = currentStages();
+    const sig = [
+        state.activeTab,
+        stages.length,
+        state.eyeMaskMode,
+        state.hasRage,
+        state.modelType
+    ].join('|');
+
+    // Быстрый путь: изменился только активный индекс
+    if (sig === _panelSig && _panelActiveIdx !== state.activeStageIdx) {
+        const listId = 'layerList' + state.activeTab.charAt(0).toUpperCase() + state.activeTab.slice(1);
+        const listEl = document.getElementById(listId);
+        if (listEl) {
+            listEl.querySelectorAll('.layer-item').forEach((item, i) => {
+                item.classList.toggle('active', i === state.activeStageIdx);
+            });
+        }
+        _panelActiveIdx = state.activeStageIdx;
+        return;
+    }
+
+    if (sig === _panelSig && _panelActiveIdx === state.activeStageIdx) return;
+
+    _panelSig = sig;
+    _panelActiveIdx = state.activeStageIdx;
+
     ['Mouth', 'Eyes', 'Rage'].forEach(tab => {
         const listEl = document.getElementById(`layerList${tab}`);
         if (!listEl) return;
@@ -107,7 +176,6 @@ function buildRightPanel() {
             return;
         }
 
-        const stages = currentStages();
         if (tabName === 'rage' && !state.hasRage) {
             listEl.innerHTML = '<div style="color:var(--dim);font-size:12px;text-align:center;">Режим RAGE отключен в настройках.</div>';
             return;
@@ -197,6 +265,7 @@ function addStage(sourceIdx) {
     pushUndo();
     stages.splice(sourceIdx + 1, 0, newStage);
     state.activeStageIdx = sourceIdx + 1;
+    if (state.activeTab === 'mouth') _ensureThresholdsCount();
     buildRightPanel();
     renderAll();
 }
@@ -207,6 +276,7 @@ function deleteStage(i) {
     pushUndo();
     stages.splice(i, 1);
     if (state.activeStageIdx >= stages.length) state.activeStageIdx = stages.length - 1;
+    if (state.activeTab === 'mouth') _ensureThresholdsCount();
     buildRightPanel();
     renderAll();
 }
@@ -220,11 +290,12 @@ function moveStage(i, dir) {
     stages[i] = stages[target];
     stages[target] = temp;
     state.activeStageIdx = target;
+    _panelSig = '';
     buildRightPanel();
     renderAll();
 }
 
-// Undo / Redo с поддержкой маски
+// === Undo / Redo ===
 function pushUndo() {
     if (state.activeTab === 'eyes' && state.eyeMaskMode) {
         state.undoStack.push({type: 'mask', mask: new Uint8Array(state.eyeMask)});
@@ -234,6 +305,7 @@ function pushUndo() {
     }
     if (state.undoStack.length > MAX_UNDO) state.undoStack.shift();
     state.redoStack = [];
+    _panelSig = ''; // превью-миниатюры обновятся при следующей перестройке
 }
 
 function undo() {
@@ -244,11 +316,15 @@ function undo() {
         state.redoStack.push({type: 'mask', mask: new Uint8Array(state.eyeMask)});
         state.eyeMask = new Uint8Array(snap.mask);
     } else {
+        if (snap.type !== state.activeTab) {
+            state.undoStack.push(snap);
+            return;
+        }
         const stages = currentStages().map(cloneStage);
         state.redoStack.push({type: state.activeTab, stages});
-        if (snap.type !== state.activeTab) { state.undoStack.push(snap); return; }
         applyStages(snap.stages);
     }
+    _panelSig = '';
     buildRightPanel();
     renderAll();
 }
@@ -261,11 +337,15 @@ function redo() {
         state.undoStack.push({type: 'mask', mask: new Uint8Array(state.eyeMask)});
         state.eyeMask = new Uint8Array(snap.mask);
     } else {
+        if (snap.type !== state.activeTab) {
+            state.redoStack.push(snap);
+            return;
+        }
         const stages = currentStages().map(cloneStage);
         state.undoStack.push({type: state.activeTab, stages});
-        if (snap.type !== state.activeTab) { state.redoStack.push(snap); return; }
         applyStages(snap.stages);
     }
+    _panelSig = '';
     buildRightPanel();
     renderAll();
 }
@@ -283,17 +363,27 @@ function setTool(tool) {
     });
 }
 
+// === Пороги громкости ===
+function _ensureThresholdsCount() {
+    const cnt = state.mouthStages.length;
+    const need = Math.max(0, cnt - 1);
+    const th = state.settings.thresholds;
+    if (th.length === need) return;
+    if (need === 0) { th.length = 0; return; }
+    th.length = 0;
+    const step = 100 / cnt;
+    for (let i = 1; i < cnt; i++) {
+        th.push(Math.max(1, Math.min(100, Math.round(i * step))));
+    }
+}
+
 function buildThresholdsUI() {
     const row = document.getElementById('threshRow');
+    if (!row) return;
     row.innerHTML = '';
+    _ensureThresholdsCount();
+
     const cnt = state.mouthStages.length;
-
-    // Если порогов не хватает, достраиваем
-    while(state.settings.thresholds.length < cnt - 1) {
-        const last = state.settings.thresholds[state.settings.thresholds.length - 1] || 1;
-        state.settings.thresholds.push(Math.min(100, last + 5));
-    }
-
     for (let i = 0; i < cnt - 1; i++) {
         const wrap = document.createElement('div');
         wrap.className = 'field';
@@ -305,7 +395,6 @@ function buildThresholdsUI() {
         const inp = document.createElement('input');
         inp.type = 'range';
 
-        // Устанавливаем строгие границы для текущего
         const prevV = i > 0 ? state.settings.thresholds[i-1] : 0;
         const nextV = i < cnt - 2 ? state.settings.thresholds[i+1] : 101;
         inp.min = prevV + 1;
@@ -322,7 +411,6 @@ function buildThresholdsUI() {
             inp.value = v;
             lbl.querySelector('.v').textContent = v + '%';
 
-            // Обновляем границы для ВСЕХ инпутов, чтобы избежать пересечений
             const inputs = row.querySelectorAll('input');
             for (let j = 0; j < inputs.length; j++) {
                 const p = j > 0 ? state.settings.thresholds[j-1] : 0;

@@ -45,11 +45,13 @@ function pngBase64ToLayer(b64, callback) {
         const ctx = cv.getContext('2d');
         ctx.drawImage(img, 0, 0);
         const data = ctx.getImageData(0, 0, MAX_RES, MAX_RES);
-        callback(new Uint8ClampedArray(data.data.buffer));
+        callback(new Uint8ClampedArray(data.data)); // копия, не view на буфер
     };
+    img.onerror = () => callback(null);
     img.src = b64;
 }
 
+// === Minecraft: 8×8 грани скина → 256×256 слои ===
 function makeFacesFromSkin(data){
     const faces = {};
     const OUT = MAX_RES;
@@ -81,8 +83,13 @@ function cloneFaces(faces){
     return out;
 }
 
+// Для Minecraft — объект с гранями куба.
+// Для PNG — псевдо-объект {__png: true, stage}, чтобы renderHead/renderFlatFace
+// по одному флагу понимали, что нужен плоский рендер.
 function getFacesForStage(stage){
-    if(!state.skinFaces || !stage) return null;
+    if(!stage) return null;
+    if(state.modelType === 'png') return {__png: true, stage};
+    if(!state.skinFaces) return null;
     return {
         top: state.skinFaces.top,
         bottom: state.skinFaces.bottom,
@@ -94,19 +101,58 @@ function getFacesForStage(stage){
 }
 
 function activeLayer(){
+    if(state.modelType === 'png') return state.showBase ? 'base' : null;
     if(state.showHat) return 'hat';
     if(state.showBase) return 'base';
     return null;
+}
+
+// Масштабирование PNG-слоя (256×256) вокруг центра в тот же 256×256 буфер.
+// Nearest-neighbor — быстро, не размывает пиксель-арт.
+// scale = 1.0 → прямая копия; >1 → увеличение (края обрезаются); <1 → уменьшение (поля прозрачные).
+function blitPngScaled(dst, size, src, scale){
+    if(!(scale > 0)) scale = 1;
+    if(scale === 1){
+        for(let i=0;i<size*size;i++){
+            const o = i*4;
+            const a = src[o+3];
+            if(a === 0) continue;
+            dst[o]=src[o]; dst[o+1]=src[o+1]; dst[o+2]=src[o+2]; dst[o+3]=a;
+        }
+        return;
+    }
+    const cx = size/2, cy = size/2;
+    const inv = 1/scale;
+    for(let y=0;y<size;y++){
+        for(let x=0;x<size;x++){
+            const sx = Math.round((x - cx) * inv + cx);
+            const sy = Math.round((y - cy) * inv + cy);
+            if(sx < 0 || sx >= size || sy < 0 || sy >= size) continue;
+            const so = (sy*size+sx)*4;
+            const a = src[so+3];
+            if(a === 0) continue;
+            const doff = (y*size+x)*4;
+            dst[doff]=src[so]; dst[doff+1]=src[so+1]; dst[doff+2]=src[so+2]; dst[doff+3]=a;
+        }
+    }
 }
 
 function renderHead(imgData, rot, faces){
     const size = MAX_RES;
     const d = imgData.data;
     const N = MAX_RES;
-    const R_VIEW = getViewRadius(rot);
 
     for(let p=0;p<size*size;p++){ const o = p*4; d[o]=d[o+1]=d[o+2]=d[o+3]=0; }
     if(!faces) return;
+
+    // PNG: плоский рендер, без куба и без поворотов
+    if(faces.__png){
+        if(!faces.stage || !state.showBase) return;
+        blitPngScaled(d, size, faces.stage.base, state.pngScale);
+        return;
+    }
+
+    const R_VIEW = getViewRadius(rot);
 
     const m = eulerMatrix(rot.x, rot.y, rot.z);
     const mt = [m[0],m[3],m[6], m[1],m[4],m[7], m[2],m[5],m[8]];
@@ -174,10 +220,9 @@ function renderFlatFace(imgData, stage, tabName = 'mouth'){
     for(let p=0;p<size*size;p++){ const o = p*4; d[o]=d[o+1]=d[o+2]=d[o+3]=0; }
     if(!stage) return;
 
-    if (tabName === 'rage') {
-        // Для Rage рисуем только переднюю часть
-        if(state.showBase) blitLayer(d, size, stage.base);
-        if(state.showHat)  blitLayer(d, size, stage.hat);
+    // PNG: один слой, тот же масштаб, что и в 3D-превью
+    if(state.modelType === 'png'){
+        if(state.showBase) blitPngScaled(d, size, stage.base, state.pngScale);
         return;
     }
 
@@ -206,6 +251,20 @@ function blitLayer(dst, size, tex){
 }
 
 function makeEyeOverlayFaces(stage, mask){
+    // PNG: маска обнуляет alpha в base; возвращаем псевдо-объект
+    if(state.modelType === 'png'){
+        if(!stage) return {__png: true, stage: null};
+        if(!mask)  return {__png: true, stage};
+        const maskedBase = new Uint8ClampedArray(stage.base);
+        for(let i=0;i<MAX_RES*MAX_RES;i++){
+            if(!mask[i]){
+                maskedBase[i*4+3] = 0;
+            }
+        }
+        return {__png: true, stage: {base: maskedBase, hat: stage.hat}};
+    }
+
+    // Minecraft: 5 пустых граней + маскированный front
     const blank = () => new Uint8ClampedArray(MAX_RES*MAX_RES*4);
     const maskedBase = new Uint8ClampedArray(stage.base);
     const maskedHat  = new Uint8ClampedArray(stage.hat);

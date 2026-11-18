@@ -22,7 +22,7 @@
       <button class="start-btn" onclick="chooseType('png')">
         <span class="icon">🖼️</span>
         <span class="title">PNG</span>
-        <span class="desc">Своя картинка (В разработке)</span>
+        <span class="desc">Своя картинка любого размера</span>
       </button>
       <button class="start-btn" onclick="chooseType('my')">
         <span class="icon">📁</span>
@@ -120,6 +120,16 @@
         <span>Режим 2D/3D (6)</span>
         <button id="btnMode" class="btn-toggle on">3D</button>
       </div>
+    </div>
+
+    <div class="layer-section" id="pngScaleSection" style="display:none;">
+      <div class="label">МАСШТАБ ИЗОБРАЖЕНИЯ</div>
+      <div class="toggle-row">
+        <span>Размер</span>
+        <span id="pngScaleValue" style="color:var(--acc); font-weight:bold;">100%</span>
+      </div>
+      <input type="range" id="pngScaleSlider" min="25" max="200" step="5" value="100" style="width:100%;">
+      <p style="font-size:10px; color:var(--dim); text-align:center; margin-top:8px;">Пропорции сохраняются</p>
     </div>
 
     <div class="palette-section">
@@ -247,15 +257,6 @@
       <button id="btnFinish" class="btn-primary big" style="width:100%;">СОХРАНИТЬ ПРОЕКТ</button>
     </div>
   </aside>
-</div>
-
-<!-- Заглушка для PNG -->
-<div id="page-png" class="page">
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;">
-    <h1 style="color:var(--acc);">Режим PNG</h1>
-    <p style="color:var(--dim);">В разработке...</p>
-    <button onclick="showPage('page-start')" class="btn-secondary" style="margin-top:20px;">← Назад</button>
-  </div>
 </div>
 
 <!-- Модули -->

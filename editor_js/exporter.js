@@ -4,19 +4,37 @@ async function renderStageToPNG(stage, deltaFrom = null){
     const cv = document.createElement('canvas');
     cv.width = MAX_RES; cv.height = MAX_RES;
     const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     const img = ctx.createImageData(MAX_RES, MAX_RES);
-    renderHead(img, state.rot, getFacesForStage(stage));
 
-    if (deltaFrom) {
-        const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
-        renderHead(baseImg, state.rot, getFacesForStage(deltaFrom));
-        for (let i = 0; i < img.data.length; i += 4) {
-            if (img.data[i+3] === 0 ||
-                (img.data[i]   === baseImg.data[i]   &&
-                    img.data[i+1] === baseImg.data[i+1] &&
-                    img.data[i+2] === baseImg.data[i+2] &&
-                    img.data[i+3] === baseImg.data[i+3])) {
-                img.data[i+3] = 0;
+    if (state.modelType === 'png') {
+        if (state.showBase) blitPngScaled(img.data, MAX_RES, stage.base, state.pngScale);
+        if (deltaFrom) {
+            const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
+            if (state.showBase) blitPngScaled(baseImg.data, MAX_RES, deltaFrom.base, state.pngScale);
+            for (let i = 0; i < img.data.length; i += 4) {
+                if (img.data[i+3] === 0 ||
+                    (img.data[i]   === baseImg.data[i]   &&
+                        img.data[i+1] === baseImg.data[i+1] &&
+                        img.data[i+2] === baseImg.data[i+2] &&
+                        img.data[i+3] === baseImg.data[i+3])) {
+                    img.data[i+3] = 0;
+                }
+            }
+        }
+    } else {
+        renderHead(img, state.rot, getFacesForStage(stage));
+        if (deltaFrom) {
+            const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
+            renderHead(baseImg, state.rot, getFacesForStage(deltaFrom));
+            for (let i = 0; i < img.data.length; i += 4) {
+                if (img.data[i+3] === 0 ||
+                    (img.data[i]   === baseImg.data[i]   &&
+                        img.data[i+1] === baseImg.data[i+1] &&
+                        img.data[i+2] === baseImg.data[i+2] &&
+                        img.data[i+3] === baseImg.data[i+3])) {
+                    img.data[i+3] = 0;
+                }
             }
         }
     }
@@ -29,21 +47,42 @@ async function renderBlinkToPNG(stage, deltaFrom = null){
     const cv = document.createElement('canvas');
     cv.width = MAX_RES; cv.height = MAX_RES;
     const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     const img = ctx.createImageData(MAX_RES, MAX_RES);
 
-    const useMask = state.eyeMask ? state.eyeMask : null;
-    renderHead(img, state.rot, makeEyeOverlayFaces(stage, useMask));
+    const useMask = state.blinkOnlyEyes ? state.eyeMask : null;
 
-    if (deltaFrom) {
-        const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
-        renderHead(baseImg, state.rot, makeEyeOverlayFaces(deltaFrom, useMask));
-        for (let i = 0; i < img.data.length; i += 4) {
-            if (img.data[i+3] === 0 ||
-                (img.data[i]   === baseImg.data[i]   &&
-                    img.data[i+1] === baseImg.data[i+1] &&
-                    img.data[i+2] === baseImg.data[i+2] &&
-                    img.data[i+3] === baseImg.data[i+3])) {
-                img.data[i+3] = 0;
+    if (state.modelType === 'png') {
+        const maskedBase = _applyPngMask(stage.base, useMask);
+        if (state.showBase) blitPngScaled(img.data, MAX_RES, maskedBase, state.pngScale);
+
+        if (deltaFrom) {
+            const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
+            const maskedFrom = _applyPngMask(deltaFrom.base, useMask);
+            if (state.showBase) blitPngScaled(baseImg.data, MAX_RES, maskedFrom, state.pngScale);
+            for (let i = 0; i < img.data.length; i += 4) {
+                if (img.data[i+3] === 0 ||
+                    (img.data[i]   === baseImg.data[i]   &&
+                        img.data[i+1] === baseImg.data[i+1] &&
+                        img.data[i+2] === baseImg.data[i+2] &&
+                        img.data[i+3] === baseImg.data[i+3])) {
+                    img.data[i+3] = 0;
+                }
+            }
+        }
+    } else {
+        renderHead(img, state.rot, makeEyeOverlayFaces(stage, useMask));
+        if (deltaFrom) {
+            const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
+            renderHead(baseImg, state.rot, makeEyeOverlayFaces(deltaFrom, useMask));
+            for (let i = 0; i < img.data.length; i += 4) {
+                if (img.data[i+3] === 0 ||
+                    (img.data[i]   === baseImg.data[i]   &&
+                        img.data[i+1] === baseImg.data[i+1] &&
+                        img.data[i+2] === baseImg.data[i+2] &&
+                        img.data[i+3] === baseImg.data[i+3])) {
+                    img.data[i+3] = 0;
+                }
             }
         }
     }
@@ -52,22 +91,50 @@ async function renderBlinkToPNG(stage, deltaFrom = null){
     return new Uint8Array(await blob.arrayBuffer());
 }
 
+function _applyPngMask(src, mask){
+    if (!mask) return src;
+    const out = new Uint8ClampedArray(src);
+    for (let i = 0; i < MAX_RES * MAX_RES; i++) {
+        if (!mask[i]) out[i*4+3] = 0;
+    }
+    return out;
+}
+
 async function renderRageToPNG(stage){
     const cv = document.createElement('canvas');
     cv.width = MAX_RES; cv.height = MAX_RES;
     const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     const img = ctx.createImageData(MAX_RES, MAX_RES);
-    renderHead(img, state.rot, makeEyeOverlayFaces(stage, null));
 
-    const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
-    renderHead(baseImg, state.rot, makeEyeOverlayFaces(state.mouthStages[0], null));
-    for (let i = 0; i < img.data.length; i += 4) {
-        if (img.data[i+3] === 0 ||
-            (img.data[i]   === baseImg.data[i]   &&
-                img.data[i+1] === baseImg.data[i+1] &&
-                img.data[i+2] === baseImg.data[i+2] &&
-                img.data[i+3] === baseImg.data[i+3])) {
-            img.data[i+3] = 0;
+    if (state.modelType === 'png') {
+        if (state.showBase) blitPngScaled(img.data, MAX_RES, stage.base, state.pngScale);
+        const baseStage = state.mouthStages[0];
+        if (baseStage) {
+            const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
+            if (state.showBase) blitPngScaled(baseImg.data, MAX_RES, baseStage.base, state.pngScale);
+            for (let i = 0; i < img.data.length; i += 4) {
+                if (img.data[i+3] === 0 ||
+                    (img.data[i]   === baseImg.data[i]   &&
+                        img.data[i+1] === baseImg.data[i+1] &&
+                        img.data[i+2] === baseImg.data[i+2] &&
+                        img.data[i+3] === baseImg.data[i+3])) {
+                    img.data[i+3] = 0;
+                }
+            }
+        }
+    } else {
+        renderHead(img, state.rot, makeEyeOverlayFaces(stage, null));
+        const baseImg = ctx.createImageData(MAX_RES, MAX_RES);
+        renderHead(baseImg, state.rot, makeEyeOverlayFaces(state.mouthStages[0], null));
+        for (let i = 0; i < img.data.length; i += 4) {
+            if (img.data[i+3] === 0 ||
+                (img.data[i]   === baseImg.data[i]   &&
+                    img.data[i+1] === baseImg.data[i+1] &&
+                    img.data[i+2] === baseImg.data[i+2] &&
+                    img.data[i+3] === baseImg.data[i+3])) {
+                img.data[i+3] = 0;
+            }
         }
     }
     ctx.putImageData(img, 0, 0);
@@ -82,24 +149,26 @@ document.getElementById('btnFinish').addEventListener('click', async () => {
 
     const files = [];
     const enc = new TextEncoder();
-    const block = MAX_RES / 8;
+    const isPng = state.modelType === 'png';
 
-    // 1. Сохраняем 3D-рендеры для программы
+    // 1. Запечённые PNG для программы
     for (let i = 0; i < state.mouthStages.length; i++) {
         const delta = (i > 0) ? state.mouthStages[0] : null;
         files.push({ name: `image_mouth_${i+1}.png`, data: await renderStageToPNG(state.mouthStages[i], delta) });
+        await new Promise(r => setTimeout(r, 0));
     }
 
     for (let i = 0; i < state.blinkStages.length; i++) {
-        const delta = state.skinFaces.front;
+        const delta = isPng ? state.blinkStages[0] : state.skinFaces.front;
         files.push({ name: `image_blink_${i+1}.png`, data: await renderBlinkToPNG(state.blinkStages[i], delta) });
+        await new Promise(r => setTimeout(r, 0));
     }
 
     if (state.hasRage && state.rageStage) {
         files.push({ name: `image_rage.png`, data: await renderRageToPNG(state.rageStage) });
     }
 
-    // 2. Сохраняем RAW развертки в разрешении 256x256 без потери качества
+    // 2. Канонические RAW-слои 256×256
     const saveLayerRAW = async (layerArray, filename) => {
         const cv = document.createElement('canvas');
         cv.width = MAX_RES; cv.height = MAX_RES;
@@ -111,33 +180,50 @@ document.getElementById('btnFinish').addEventListener('click', async () => {
         files.push({ name: filename, data: new Uint8Array(await blob.arrayBuffer()) });
     };
 
-    const saveStageRAW = async (stage, filename) => {
-        if (!stage) {
-            await saveLayerRAW(new Uint8ClampedArray(MAX_RES*MAX_RES*4), filename);
-            await saveLayerRAW(new Uint8ClampedArray(MAX_RES*MAX_RES*4), filename.replace('.png', '_hat.png'));
-            return;
+    if (isPng) {
+        for (let i = 0; i < state.mouthStages.length; i++) {
+            await saveLayerRAW(state.mouthStages[i].base, `RAW/mouth/${i+1}.png`);
         }
-        await saveLayerRAW(stage.base, filename);
-        await saveLayerRAW(stage.hat, filename.replace('.png', '_hat.png'));
-    };
-
-    for (let i = 0; i < state.mouthStages.length; i++) {
-        await saveStageRAW(state.mouthStages[i], `RAW/mouth/${i+1}.png`);
+        for (let i = 0; i < state.blinkStages.length; i++) {
+            await saveLayerRAW(state.blinkStages[i].base, `RAW/eyes/${i+1}.png`);
+        }
+        if (state.hasRage && state.rageStage) {
+            await saveLayerRAW(state.rageStage.base, `RAW/rage.png`);
+        }
+        if (state.originalPngStage) {
+            await saveLayerRAW(state.originalPngStage.base, `source.png`);
+        }
+    } else {
+        const saveStageRAW = async (stage, filename) => {
+            if (!stage) {
+                await saveLayerRAW(new Uint8ClampedArray(MAX_RES*MAX_RES*4), filename);
+                await saveLayerRAW(new Uint8ClampedArray(MAX_RES*MAX_RES*4), filename.replace('.png', '_hat.png'));
+                return;
+            }
+            await saveLayerRAW(stage.base, filename);
+            await saveLayerRAW(stage.hat, filename.replace('.png', '_hat.png'));
+        };
+        for (let i = 0; i < state.mouthStages.length; i++) {
+            await saveStageRAW(state.mouthStages[i], `RAW/mouth/${i+1}.png`);
+        }
+        for (let i = 0; i < state.blinkStages.length; i++) {
+            await saveStageRAW(state.blinkStages[i], `RAW/eyes/${i+1}.png`);
+        }
+        await saveStageRAW(state.hasRage ? state.rageStage : null, `RAW/rage.png`);
     }
-    for (let i = 0; i < state.blinkStages.length; i++) {
-        await saveStageRAW(state.blinkStages[i], `RAW/eyes/${i+1}.png`);
-    }
-    await saveStageRAW(state.hasRage ? state.rageStage : null, `RAW/rage.png`);
 
-    // 3. Сохраняем маску
+    // 3. Маска
     if (state.eyeMask) {
         const cv = document.createElement('canvas');
         cv.width = MAX_RES; cv.height = MAX_RES;
         const ctx = cv.getContext('2d');
         const img = ctx.createImageData(MAX_RES, MAX_RES);
-        for(let i=0;i<MAX_RES*MAX_RES;i++){
-            if(state.eyeMask[i]){
-                img.data[i*4] = 255; img.data[i*4+1] = 255; img.data[i*4+2] = 255; img.data[i*4+3] = 255;
+        for (let i = 0; i < MAX_RES * MAX_RES; i++) {
+            if (state.eyeMask[i]) {
+                img.data[i*4]   = 255;
+                img.data[i*4+1] = 255;
+                img.data[i*4+2] = 255;
+                img.data[i*4+3] = 255;
             }
         }
         ctx.putImageData(img, 0, 0);
@@ -145,44 +231,53 @@ document.getElementById('btnFinish').addEventListener('click', async () => {
         files.push({ name: 'RAW/mask.png', data: new Uint8Array(await blob.arrayBuffer()) });
     }
 
-    // 4. Сохраняем оригинальный скин (64x64)
-    const skinCv = document.createElement('canvas');
-    skinCv.width = 64; skinCv.height = 64;
-    const skinCtx = skinCv.getContext('2d');
-    const skinImg = skinCtx.createImageData(64, 64);
-    for (const f of FACE_NAMES) {
-        for (const layer of ['base', 'hat']) {
-            const uv = FACE_UV[layer][f];
-            const tex = state.skinFaces[f][layer];
-            for (let sy = 0; sy < 8; sy++) {
-                for (let sx = 0; sx < 8; sx++) {
-                    const so = (Math.floor((sy + 0.5) * block) * MAX_RES + Math.floor((sx + 0.5) * block)) * 4;
-                    const doff = ((uv[1] + sy) * 64 + (uv[0] + sx)) * 4;
-                    skinImg.data[doff] = tex[so];
-                    skinImg.data[doff+1] = tex[so+1];
-                    skinImg.data[doff+2] = tex[so+2];
-                    skinImg.data[doff+3] = tex[so+3];
+    // 4. skin.png (только Minecraft)
+    if (!isPng && state.skinFaces) {
+        const block = MAX_RES / 8;
+        const skinCv = document.createElement('canvas');
+        skinCv.width = 64; skinCv.height = 64;
+        const skinCtx = skinCv.getContext('2d');
+        const skinImg = skinCtx.createImageData(64, 64);
+        for (const f of FACE_NAMES) {
+            for (const layer of ['base', 'hat']) {
+                const uv = FACE_UV[layer][f];
+                const tex = state.skinFaces[f][layer];
+                for (let sy = 0; sy < 8; sy++) {
+                    for (let sx = 0; sx < 8; sx++) {
+                        const so = (Math.floor((sy + 0.5) * block) * MAX_RES + Math.floor((sx + 0.5) * block)) * 4;
+                        const doff = ((uv[1] + sy) * 64 + (uv[0] + sx)) * 4;
+                        skinImg.data[doff]   = tex[so];
+                        skinImg.data[doff+1] = tex[so+1];
+                        skinImg.data[doff+2] = tex[so+2];
+                        skinImg.data[doff+3] = tex[so+3];
+                    }
                 }
             }
         }
+        skinCtx.putImageData(skinImg, 0, 0);
+        const skinBlob = await new Promise(res => skinCv.toBlob(res, 'image/png'));
+        files.push({ name: 'skin.png', data: new Uint8Array(await skinBlob.arrayBuffer()) });
     }
-    skinCtx.putImageData(skinImg, 0, 0);
-    const skinBlob = await new Promise(res => skinCv.toBlob(res, 'image/png'));
-    files.push({ name: 'skin.png', data: new Uint8Array(await skinBlob.arrayBuffer()) });
 
-    // 5. JSON файлы
+    // 5. JSON
     const rawData = {
-        version: 4,
-        rotations: state.rot,
+        version: 5,
+        model_type: state.modelType,
+        rotations: isPng ? {x: 0, y: 0, z: 0} : state.rot,
         mouth_count: state.mouthStages.length,
         blink_count: state.blinkStages.length,
         has_rage: state.hasRage,
-        has_body: state.hasBody,
+        has_body: isPng ? false : state.hasBody,
         settings: state.settings
     };
+    if (isPng) {
+        rawData.png_source_dims = state.pngSourceDims;
+        rawData.png_scale = state.pngScale;
+    }
     files.push({ name: 'RAW/RAW.json', data: enc.encode(JSON.stringify(rawData, null, 2)) });
 
     const cfgData = {
+        model_type: state.modelType,
         sensitivity: state.settings.sensitivity,
         thresholds: state.settings.thresholds,
         blink_interval: state.settings.blinkInterval,
@@ -194,9 +289,10 @@ document.getElementById('btnFinish').addEventListener('click', async () => {
         has_rage: state.hasRage,
         blink_count: state.blinkStages.length,
         blink_only_eyes: state.blinkOnlyEyes,
-        has_body: state.hasBody,
+        has_body: isPng ? false : state.hasBody,
         memory_limit_mb: 300
     };
+    if (isPng) cfgData.png_scale = state.pngScale;
     files.push({ name: 'config.json', data: enc.encode(JSON.stringify(cfgData, null, 2)) });
 
     // 6. Запись на диск
@@ -204,7 +300,6 @@ document.getElementById('btnFinish').addEventListener('click', async () => {
         try {
             const dir = await window.showDirectoryPicker();
 
-            // Умная проверка: если пользователь уже зашел в папку "models", не создаем её снова
             let modelsDir = dir;
             if (dir.name !== 'models') {
                 modelsDir = await dir.getDirectoryHandle('models', {create: true});
@@ -230,15 +325,12 @@ document.getElementById('btnFinish').addEventListener('click', async () => {
                 await w.close();
             }
 
-            // Пытаемся обновить app_config.json, только если выбрана корневая папка
             try {
                 if (dir.name !== 'models') {
                     const appCfg = await dir.getFileHandle('app_config.json', {create: true});
                     const w = await appCfg.createWritable();
                     await w.write(new TextEncoder().encode(JSON.stringify({current_model: modelName}, null, 2)));
                     await w.close();
-                } else {
-                    console.warn("Выбрана папка models. app_config.json не обновлен (он должен лежать в корне программы).");
                 }
             } catch(e) { console.log('app_config.json не обновлен', e); }
 
