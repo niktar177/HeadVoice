@@ -1,3 +1,4 @@
+### БАГИ И ИХ РЕШЕНИЕ ###
 <img width="1155" height="950" alt="photo_5469790282418166985_y" src="https://github.com/user-attachments/assets/51d85746-3fe2-43b3-95aa-bb1bcb4be1ee" />
 
 ### Если редактор открылся так, у вас возможно не диск С выбран.
