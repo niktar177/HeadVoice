@@ -1,0 +1,35 @@
+{
+  "version": 5,
+  "model_type": "minecraft_skin",
+  "rotations": {
+    "x": -8.326672684688674e-17,
+    "y": -0.6981317007977319,
+    "z": 2.7755575615628914e-17
+  },
+  "mouth_count": 14,
+  "blink_count": 23,
+  "has_rage": true,
+  "has_body": false,
+  "settings": {
+    "sensitivity": 14,
+    "thresholds": [
+      6,
+      11,
+      16,
+      21,
+      26,
+      31,
+      36,
+      41,
+      46,
+      51,
+      56,
+      61,
+      66
+    ],
+    "blinkInterval": 5,
+    "rageKey": "j",
+    "shakeForce": 10,
+    "blinkDuration": 806
+  }
+}

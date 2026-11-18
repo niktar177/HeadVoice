@@ -1,0 +1,23 @@
+{
+  "model_type": "png",
+  "sensitivity": 18.02,
+  "thresholds": [
+    17,
+    33,
+    50,
+    67,
+    83
+  ],
+  "blink_interval": 5.0,
+  "rage_key": "j",
+  "shake_force": 8,
+  "blink_duration": 300,
+  "mouth_count": 6,
+  "has_blinking": true,
+  "has_rage": true,
+  "blink_count": 12,
+  "blink_only_eyes": false,
+  "has_body": false,
+  "memory_limit_mb": 300,
+  "png_scale": 1
+}

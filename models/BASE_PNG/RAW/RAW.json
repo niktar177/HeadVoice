@@ -1,0 +1,32 @@
+{
+  "version": 5,
+  "model_type": "png",
+  "rotations": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+  },
+  "mouth_count": 6,
+  "blink_count": 12,
+  "has_rage": true,
+  "has_body": false,
+  "settings": {
+    "sensitivity": 18.02,
+    "thresholds": [
+      17,
+      33,
+      50,
+      67,
+      83
+    ],
+    "blinkInterval": 5,
+    "rageKey": "j",
+    "shakeForce": 8,
+    "blinkDuration": 300
+  },
+  "png_source_dims": {
+    "width": 576,
+    "height": 1024
+  },
+  "png_scale": 1
+}
